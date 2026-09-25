@@ -1,142 +1,60 @@
-# 📘 Product Manual Assistant (RAG + ScaleDown)
+# Product Manual Assistant
 
-A Streamlit-based **RAG application** that allows users to upload any Product Manual PDF and ask questions from it.
+A Streamlit app that answers questions from uploaded product manuals using PDF text extraction, chunking, FAISS semantic retrieval, and ScaleDown-style context compression.
 
-It uses:
+## Project layout
 
-- PDF Text Extraction  
-- Chunking + FAISS Semantic Search  
-- Context Compression using ScaleDown  
-- Answer Generation from Retrieved Manual Sections  
-
----
-
-## 🎥 Demo Video
-
-📌 Watch Project Demo Here:  
-👉 https://github.com/user-attachments/assets/20637079-b4cb-41a8-ba03-a9ab6505d208
-
----
-
-## 🚀 Features
-
-✅ Upload Product Manual (PDF)  
-✅ Extract text automatically (PyMuPDF)  
-✅ Chunk-based Retrieval (RAG Pipeline)  
-✅ Semantic Search using FAISS  
-✅ Context Compression using ScaleDown  
-✅ Streamlit UI for interactive Q&A  
-✅ Displays retrieved chunks + compression metrics  
-
----
-
-## 🛠 Tech Stack
-
-- **Python**
-- **Streamlit**
-- **FAISS Vector Store**
-- **PDF Text Extraction (PyMuPDF)**
-- **ScaleDown Compressor**
-- **Sentence Transformers Embeddings**
-
----
-
-## 📂 Project Structure
-
-```bash
+```text
 product-manual-assistant/
-│
-├── app.py                  # Main Streamlit Application
-│
-├── rag/
-│   ├── pdf_loader.py        # Extracts text from PDF
-│   ├── chunker.py           # Splits text into chunks
-│   ├── retriever.py         # FAISS semantic retriever
-│   └── generator.py         # Extractive answer generator
-│
-├── scaledown/
-│   └── compressor.py        # Context compression module
-│
-├── dashboard/
-│   └── metrics.py           # Manual statistics + token metrics
-│
+├── app.py                    # Stable Streamlit entry point
+├── frontend/
+│   └── app.py                # Streamlit interface
+├── backend/
+│   ├── dashboard/            # Manual metrics
+│   ├── rag/                  # PDF loading, chunking, retrieval, answers
+│   └── scaledown/            # Context compression and token metrics
 ├── sample_data/
-│   └── sample_manual.txt    # Example manual text
-│
 ├── requirements.txt
 └── README.md
 ```
----
 
-## ⚡ Quick Start
-1️⃣ Clone Repository
+The UI stays in Streamlit. Its backend is a set of Python modules in the same process; a separate HTTP API is not needed for this single-client app. Compression metrics and answer generation use the same compressed retrieved context, while the UI still shows the original retrieved chunks.
 
-git clone https://github.com/DevVerma14/product-manual-assistant.git
+## Run locally
 
-cd product-manual-assistant
-
-2️⃣ Create Virtual Environment
-
+```powershell
 python -m venv .venv
-
-3️⃣ Activate Environment
-
-Windows (PowerShell)
-
-.venv\Scripts\activate
-
-Mac/Linux
-
-source .venv/bin/activate
-
-4️⃣ Install Dependencies
-
-pip install -r requirements.txt
-
-5️⃣ Run Streamlit App
-
+.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
 streamlit run app.py
+```
 
-App will open in browser at:
+On macOS or Linux, activate the environment with `source .venv/bin/activate`.
 
-http://localhost:8501
+Upload a text-based PDF manual, wait for indexing, then enter a question. Scanned image-only PDFs are not OCR processed.
 
----
+## Update the existing GitHub repository
 
-## 💬 Example Questions
-Try asking:
+This project is prepared for the existing public repository: <https://github.com/DevVerma14/product-manual-assistant>. Updating its current checkout and pushing to its existing `origin` keeps the repository URL unchanged. Do not create a new repository or replace its `.git` folder.
 
-How do I load paper in the printer?
+1. Download and extract the upgraded project ZIP into a temporary folder.
+2. Open PowerShell in your existing local clone of `product-manual-assistant`.
+3. Copy the extracted project files over the clone, remove the old module folders, and push the current branch:
 
-How do I print on envelopes?
+```powershell
+# Run from the existing product-manual-assistant clone.
+Copy-Item -Path "C:\path\to\product-manual-assistant-main\*" -Destination . -Recurse -Force
+git rm -r --ignore-unmatch rag scaledown dashboard
+git status
+git add -A
+git commit -m "Organize app into frontend and backend"
+git push origin HEAD
+```
 
-What should I do if paper jams?
+Replace `C:\path\to\product-manual-assistant-main` with the folder where you extracted the ZIP. Check `git status` before committing and make sure the remote is still the existing repository with `git remote -v`. The push uses the currently checked-out branch and existing `origin`.
 
-How can I improve print quality?
+## Notes
 
----
-
-## ⚠ Notes
-This project uses a basic extractive answer generator
-
-It does NOT require any paid API key
-
-Answers are generated directly from retrieved manual chunks
-
----
-
-## 📌 Future Improvements
-Add page-level citations
-
-Integrate full LLM-based answer generation
-
-Improve chunk ranking
-
-Deploy on Streamlit Cloud
-
----
-
-## 👨‍💻 Author
-Built by Dev Verma
-
-Project: Product Manual Assistant (RAG + ScaleDown)
+- `requirements.txt` retains the project's original dependencies.
+- No paid model API key is required by the current extractive answer generator.
+- Keep secrets and `.env` files out of the public repository.
