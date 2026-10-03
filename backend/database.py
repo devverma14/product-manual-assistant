@@ -336,7 +336,7 @@ def db_list_conversations(user_id: str) -> list[dict[str, Any]]:
         try:
             res = (
                 client.table("conversations")
-                .select("id, user_id, document_id, title, created_at, updated_at, documents(name)")
+                .select("id, user_id, document_id, title, created_at, updated_at, documents!conversations_document_id_fkey(name)")
                 .eq("user_id", user_id)
                 .order("updated_at", desc=True)
                 .execute()
@@ -400,7 +400,7 @@ def db_get_conversation(conv_id: str, user_id: str) -> dict[str, Any] | None:
         try:
             res = (
                 client.table("conversations")
-                .select("id, user_id, document_id, title, created_at, updated_at, documents(name, pages, words, chunks_count)")
+                .select("id, user_id, document_id, title, created_at, updated_at, documents!conversations_document_id_fkey(name, pages, words, chunks_count)")
                 .eq("id", conv_id)
                 .eq("user_id", user_id)
                 .execute()
