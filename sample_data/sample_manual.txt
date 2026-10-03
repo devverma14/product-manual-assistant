@@ -1,0 +1,9 @@
+Sample Product Manual
+
+Section 1: Introduction
+
+This is a demo manual for the Product Manual Assistant project.
+
+Section 4.3: Error codes
+
+Error E21: water inlet failure. Check valve and hoses.

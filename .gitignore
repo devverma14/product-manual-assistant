@@ -1,0 +1,30 @@
+# Environment & Secrets
+.env
+.env.*
+!.env.example
+
+# Python Dependencies & Cache
+.venv/
+venv/
+ENV/
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+
+# Node & Frontend Build
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+
+# Local Database & User-Uploaded Files
+backend/data/
+*.sqlite
+*.sqlite3
+
+# IDE & Local Tooling
+.agents/
+.vscode/
+.idea/
+.DS_Store
