@@ -4,11 +4,12 @@ from typing import Any
 
 import faiss
 import numpy as np
-from sentence_transformers import SentenceTransformer
 
 
 class FaissRetriever:
     def __init__(self, model=None):
+        from sentence_transformers import SentenceTransformer
+
         self.model = model or SentenceTransformer(
             "all-MiniLM-L6-v2"
         )
