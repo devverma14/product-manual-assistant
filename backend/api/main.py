@@ -176,8 +176,10 @@ def _embedding_model():
     model_name = os.getenv("EMBEDDING_MODEL", DEFAULT_EMBEDDING_MODEL).strip()
     if not model_name or model_name == "all-MiniLM-L6-v2":
         model_name = DEFAULT_EMBEDDING_MODEL
-    logger.info("Loading FastEmbed embedding model: %s", model_name)
-    return TextEmbedding(model_name=model_name)
+    logger.info("Loading FastEmbed embedding model: %s (threads=1, enable_cpu_mem_arena=False)", model_name)
+    return TextEmbedding(model_name=model_name, threads=1, enable_cpu_mem_arena=False)
+
+
 
 
 
@@ -229,7 +231,13 @@ def _build_page_chunks(pdf_bytes: bytes) -> tuple[list[dict[str, Any]], int, str
             chunks.append(item)
 
     full_text = "\n\n".join(all_text)
-    return chunks, len(pages), full_text
+    page_count = len(pages)
+    del pages, all_text
+    import gc
+    gc.collect()
+    return chunks, page_count, full_text
+
+
 
 
 def _create_retriever(chunks: list[dict[str, Any]]) -> FaissRetriever:

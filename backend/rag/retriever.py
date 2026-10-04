@@ -11,9 +11,14 @@ class FaissRetriever:
         if model is not None:
             self.model = model
         else:
-            from fastembed import TextEmbedding
+            try:
+                from backend.api.main import _embedding_model
 
-            self.model = TextEmbedding(model_name="BAAI/bge-small-en-v1.5")
+                self.model = _embedding_model()
+            except Exception:
+                from fastembed import TextEmbedding
+
+                self.model = TextEmbedding(model_name="BAAI/bge-small-en-v1.5", threads=1)
 
         if hasattr(self.model, "get_sentence_embedding_dimension"):
             self.dim = self.model.get_sentence_embedding_dimension()
@@ -41,11 +46,14 @@ class FaissRetriever:
     def dimension(self, value: int) -> None:
         self.dim = value
 
-
     def _encode_texts(self, texts: list[str]) -> np.ndarray:
         if hasattr(self.model, "embed"):
-            raw_embeddings = list(self.model.embed(texts))
+            raw_embeddings = list(self.model.embed(texts, batch_size=16))
             embeddings = np.array(raw_embeddings, dtype="float32")
+            del raw_embeddings
+            import gc
+
+            gc.collect()
         elif hasattr(self.model, "encode"):
             embeddings = self.model.encode(
                 texts,
@@ -56,6 +64,7 @@ class FaissRetriever:
             raise AttributeError("Embedding model has neither 'embed' nor 'encode' method.")
 
         return np.asarray(embeddings, dtype="float32")
+
 
     def add_documents(self, docs: list[dict[str, Any]]) -> None:
         if not docs:
