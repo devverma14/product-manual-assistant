@@ -25,6 +25,23 @@ class FaissRetriever:
         self.index = faiss.IndexFlatIP(self.dim)
         self.docs: list[dict[str, Any]] = []
 
+    @property
+    def documents(self) -> list[dict[str, Any]]:
+        return self.docs
+
+    @documents.setter
+    def documents(self, value: list[dict[str, Any]]) -> None:
+        self.docs = value
+
+    @property
+    def dimension(self) -> int:
+        return self.dim
+
+    @dimension.setter
+    def dimension(self, value: int) -> None:
+        self.dim = value
+
+
     def _encode_texts(self, texts: list[str]) -> np.ndarray:
         if hasattr(self.model, "embed"):
             raw_embeddings = list(self.model.embed(texts))

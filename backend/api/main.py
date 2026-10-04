@@ -59,10 +59,11 @@ APP_NAME = "Product Manual Assistant"
 APP_VERSION = "1.0.0"
 
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
-DEFAULT_EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+DEFAULT_EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
 DEFAULT_TOP_K = 5
 MIN_RETRIEVAL_SCORE = 0.20
 COMPRESSION_TARGET_RATIO = 0.90
+
 
 
 def filter_relevant_sources(raw_sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -170,19 +171,14 @@ def _cache_retriever(document_id: str, retriever: FaissRetriever) -> None:
 
 @lru_cache(maxsize=1)
 def _embedding_model():
-    try:
-        import torch
-        torch.set_num_threads(1)
-    except Exception:
-        pass
-
-    from sentence_transformers import SentenceTransformer
+    from fastembed import TextEmbedding
 
     model_name = os.getenv("EMBEDDING_MODEL", DEFAULT_EMBEDDING_MODEL).strip()
-    if not model_name:
+    if not model_name or model_name == "all-MiniLM-L6-v2":
         model_name = DEFAULT_EMBEDDING_MODEL
-    logger.info("Loading embedding model: %s", model_name)
-    return SentenceTransformer(model_name)
+    logger.info("Loading FastEmbed embedding model: %s", model_name)
+    return TextEmbedding(model_name=model_name)
+
 
 
 class AskRequest(BaseModel):

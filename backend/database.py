@@ -688,10 +688,13 @@ def save_faiss_index_to_disk(document_id: str, retriever: Any) -> bool:
 
         faiss.write_index(retriever.index, str(index_file))
 
+        docs_list = getattr(retriever, "documents", getattr(retriever, "docs", []))
+        dim_val = getattr(retriever, "dimension", getattr(retriever, "dim", 384))
+
         with open(pkl_file, "wb") as f:
             pickle.dump({
-                "documents": retriever.documents,
-                "dimension": retriever.dimension,
+                "documents": docs_list,
+                "dimension": dim_val,
             }, f)
 
         logger.info("Saved FAISS index to disk for document: %s", document_id)
@@ -701,7 +704,7 @@ def save_faiss_index_to_disk(document_id: str, retriever: Any) -> bool:
         return False
 
 
-def load_faiss_index_from_disk(document_id: str, embedding_model: Any) -> Any | None:
+def load_faiss_index_from_disk(document_id: str, embedding_model: Any = None) -> Any | None:
     """Load FAISS index and documents metadata from disk."""
     index_file = INDEXES_DIR / f"{document_id}.faiss"
     pkl_file = INDEXES_DIR / f"{document_id}.pkl"
@@ -720,8 +723,13 @@ def load_faiss_index_from_disk(document_id: str, embedding_model: Any) -> Any | 
 
         retriever = FaissRetriever(model=embedding_model)
         retriever.index = index
-        retriever.documents = data["documents"]
-        retriever.dimension = data["dimension"]
+        docs_data = data.get("documents", data.get("docs", []))
+        retriever.documents = docs_data
+        retriever.docs = docs_data
+        dim_val = data.get("dimension", data.get("dim", 384))
+        retriever.dimension = dim_val
+        retriever.dim = dim_val
+
 
         logger.info("Loaded FAISS index from disk for document: %s", document_id)
         return retriever
