@@ -8,19 +8,37 @@ import numpy as np
 
 class FaissRetriever:
     def __init__(self, model=None):
-        from sentence_transformers import SentenceTransformer
+        if model is not None:
+            self.model = model
+        else:
+            from fastembed import TextEmbedding
 
-        self.model = model or SentenceTransformer(
-            "all-MiniLM-L6-v2"
-        )
+            self.model = TextEmbedding(model_name="BAAI/bge-small-en-v1.5")
 
         if hasattr(self.model, "get_sentence_embedding_dimension"):
             self.dim = self.model.get_sentence_embedding_dimension()
+        elif hasattr(self.model, "dim"):
+            self.dim = self.model.dim
         else:
             self.dim = 384
 
         self.index = faiss.IndexFlatIP(self.dim)
         self.docs: list[dict[str, Any]] = []
+
+    def _encode_texts(self, texts: list[str]) -> np.ndarray:
+        if hasattr(self.model, "embed"):
+            raw_embeddings = list(self.model.embed(texts))
+            embeddings = np.array(raw_embeddings, dtype="float32")
+        elif hasattr(self.model, "encode"):
+            embeddings = self.model.encode(
+                texts,
+                convert_to_numpy=True,
+                show_progress_bar=False,
+            )
+        else:
+            raise AttributeError("Embedding model has neither 'embed' nor 'encode' method.")
+
+        return np.asarray(embeddings, dtype="float32")
 
     def add_documents(self, docs: list[dict[str, Any]]) -> None:
         if not docs:
@@ -36,26 +54,7 @@ class FaissRetriever:
             raise ValueError("No valid document text provided.")
 
         texts = [doc["text"] for doc in valid_docs]
-
-        try:
-            import torch
-            with torch.no_grad():
-                embeddings = self.model.encode(
-                    texts,
-                    convert_to_numpy=True,
-                    show_progress_bar=False,
-                )
-        except Exception:
-            embeddings = self.model.encode(
-                texts,
-                convert_to_numpy=True,
-                show_progress_bar=False,
-            )
-
-        embeddings = np.asarray(
-            embeddings,
-            dtype="float32",
-        )
+        embeddings = self._encode_texts(texts)
 
         if embeddings.ndim != 2 or embeddings.shape[1] != self.dim:
             raise ValueError("Embedding dimensions do not match.")
@@ -80,25 +79,7 @@ class FaissRetriever:
         if k <= 0 or not self.docs:
             return []
 
-        try:
-            import torch
-            with torch.no_grad():
-                query_embedding = self.model.encode(
-                    [query.strip()],
-                    convert_to_numpy=True,
-                    show_progress_bar=False,
-                )
-        except Exception:
-            query_embedding = self.model.encode(
-                [query.strip()],
-                convert_to_numpy=True,
-                show_progress_bar=False,
-            )
-
-        query_embedding = np.asarray(
-            query_embedding,
-            dtype="float32",
-        )
+        query_embedding = self._encode_texts([query.strip()])
 
         if (
             query_embedding.ndim != 2
@@ -166,3 +147,4 @@ class FaissRetriever:
         )
 
         return results[:k]
+
