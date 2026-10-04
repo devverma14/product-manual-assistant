@@ -43,6 +43,14 @@ from backend.scaledown.compressor import compress_context
 # Load environment variables from root .env
 load_dotenv()
 
+# Optimize PyTorch & OpenMP thread pools for 512MB RAM cloud environments
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("MKL_NUM_THREADS", "1")
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+os.environ.setdefault("VECLIB_MAXIMUM_THREADS", "1")
+os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -148,12 +156,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Cache for active in-memory FAISS retrievers: document_id -> FaissRetriever
+# Cache for active in-memory FAISS retrievers: document_id -> FaissRetriever (max 3 to limit RAM)
 _retriever_cache: dict[str, FaissRetriever] = {}
+_MAX_RETRIEVER_CACHE_SIZE = 3
+
+
+def _cache_retriever(document_id: str, retriever: FaissRetriever) -> None:
+    if len(_retriever_cache) >= _MAX_RETRIEVER_CACHE_SIZE and document_id not in _retriever_cache:
+        oldest_key = next(iter(_retriever_cache))
+        _retriever_cache.pop(oldest_key, None)
+    _retriever_cache[document_id] = retriever
 
 
 @lru_cache(maxsize=1)
 def _embedding_model():
+    try:
+        import torch
+        torch.set_num_threads(1)
+    except Exception:
+        pass
+
     from sentence_transformers import SentenceTransformer
 
     model_name = os.getenv("EMBEDDING_MODEL", DEFAULT_EMBEDDING_MODEL).strip()
@@ -227,7 +249,7 @@ def _get_or_load_retriever(document_id: str) -> FaissRetriever:
     # Load FAISS index from disk if present
     retriever = load_faiss_index_from_disk(document_id, _embedding_model())
     if retriever:
-        _retriever_cache[document_id] = retriever
+        _cache_retriever(document_id, retriever)
         return retriever
 
     # Rebuild from DB chunks if disk index missing
@@ -240,7 +262,7 @@ def _get_or_load_retriever(document_id: str) -> FaissRetriever:
 
     retriever = _create_retriever(chunks)
     save_faiss_index_to_disk(document_id, retriever)
-    _retriever_cache[document_id] = retriever
+    _cache_retriever(document_id, retriever)
     return retriever
 
 
@@ -284,39 +306,49 @@ async def upload_manual(
     if not payload.startswith(b"%PDF"):
         raise HTTPException(status_code=400, detail="The uploaded file is not a valid PDF.")
 
-    chunks, page_count, full_text = await run_in_threadpool(_build_page_chunks, payload)
-    if not full_text.strip() or not chunks:
-        raise HTTPException(status_code=422, detail="No readable text was found in this PDF.")
+    try:
+        chunks, page_count, full_text = await run_in_threadpool(_build_page_chunks, payload)
+        if not full_text.strip() or not chunks:
+            raise HTTPException(status_code=422, detail="No readable text was found in this PDF.")
 
-    retriever = await run_in_threadpool(_create_retriever, chunks)
+        retriever = await run_in_threadpool(_create_retriever, chunks)
 
-    document_id = str(uuid.uuid4())
-    words_count = len(full_text.split())
+        document_id = str(uuid.uuid4())
+        words_count = len(full_text.split())
 
-    db_insert_document(
-        doc_id=document_id,
-        user_id=user_id,
-        filename=filename,
-        file_size=len(payload),
-        pages=page_count,
-        words=words_count,
-        chunks=chunks,
-        pdf_bytes=payload,
-    )
+        db_insert_document(
+            doc_id=document_id,
+            user_id=user_id,
+            filename=filename,
+            file_size=len(payload),
+            pages=page_count,
+            words=words_count,
+            chunks=chunks,
+            pdf_bytes=payload,
+        )
 
-    save_faiss_index_to_disk(document_id, retriever)
-    _retriever_cache[document_id] = retriever
+        save_faiss_index_to_disk(document_id, retriever)
+        _cache_retriever(document_id, retriever)
 
-    logger.info("Document indexed: %s (%d pages, %d chunks) for user %s", filename, page_count, len(chunks), user_id)
+        logger.info("Document indexed: %s (%d pages, %d chunks) for user %s", filename, page_count, len(chunks), user_id)
 
-    return {
-        "id": document_id,
-        "name": filename,
-        "pages": page_count,
-        "words": words_count,
-        "chunks": len(chunks),
-        "status": "indexed",
-    }
+        return {
+            "id": document_id,
+            "name": filename,
+            "pages": page_count,
+            "words": words_count,
+            "chunks": len(chunks),
+            "status": "indexed",
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("PDF processing or indexing failed.")
+        raise HTTPException(status_code=422, detail=f"Failed to process PDF: {str(exc)}") from exc
+    finally:
+        del payload
+        import gc
+        gc.collect()
 
 
 @app.get("/api/manuals/{manual_id}")

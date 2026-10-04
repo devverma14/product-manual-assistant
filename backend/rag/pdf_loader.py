@@ -1,25 +1,71 @@
 
+import logging
 import os
 import re
+import urllib.request
 from pathlib import Path
 from typing import Any
 
 import fitz
 
+logger = logging.getLogger(__name__)
+
 
 def _get_tessdata_path() -> str | None:
-    """Determine the Tesseract tessdata directory path, preferring TESSDATA_PREFIX env var."""
+    """Determine the Tesseract tessdata directory path across environments."""
+    # 1. Environment variable override
     env_path = os.getenv("TESSDATA_PREFIX")
-    if env_path and Path(env_path).exists():
-        return env_path
-    win_path = r"C:\Program Files\Tesseract-OCR\tessdata"
-    if Path(win_path).exists():
-        return win_path
+    if env_path:
+        p = Path(env_path)
+        if p.is_dir() and (p / "eng.traineddata").exists():
+            return str(p)
+        if (p / "tessdata" / "eng.traineddata").exists():
+            return str(p / "tessdata")
+
+    # 2. Local project backend data tessdata directory
+    local_dir = Path(__file__).parent.parent / "data" / "tessdata"
+    if (local_dir / "eng.traineddata").exists():
+        return str(local_dir)
+
+    # 3. Common Linux system paths
+    linux_paths = [
+        "/usr/share/tesseract-ocr/5/tessdata",
+        "/usr/share/tesseract-ocr/4.00/tessdata",
+        "/usr/share/tesseract-ocr/tessdata",
+        "/usr/share/tessdata",
+        "/usr/local/share/tessdata",
+    ]
+    for lp in linux_paths:
+        if Path(lp).exists() and (Path(lp) / "eng.traineddata").exists():
+            return lp
+
+    # 4. Common Windows system paths
+    win_paths = [
+        r"C:\Program Files\Tesseract-OCR\tessdata",
+        r"C:\Program Files (x86)\Tesseract-OCR\tessdata",
+    ]
+    for wp in win_paths:
+        if Path(wp).exists() and (Path(wp) / "eng.traineddata").exists():
+            return wp
+
+    # 5. Fallback auto-download of tessdata_fast eng.traineddata to local_dir
+    try:
+        local_dir.mkdir(parents=True, exist_ok=True)
+        eng_file = local_dir / "eng.traineddata"
+        if not eng_file.exists():
+            url = "https://github.com/tesseract-ocr/tessdata_fast/raw/main/eng.traineddata"
+            logger.info("Downloading Tesseract eng.traineddata to %s...", eng_file)
+            urllib.request.urlretrieve(url, eng_file)
+        if eng_file.exists():
+            return str(local_dir)
+    except Exception as exc:
+        logger.warning("Could not auto-download eng.traineddata: %s", exc)
+
     return None
 
 
 def load_pdf_pages_bytes(file_bytes: bytes) -> list[dict[str, Any]]:
-    """Extract page-wise text, using OCR for scanned pages."""
+    """Extract page-wise text, using OCR for scanned pages with graceful error handling."""
 
     if not file_bytes:
         raise ValueError("The uploaded PDF is empty.")
@@ -34,32 +80,31 @@ def load_pdf_pages_bytes(file_bytes: bytes) -> list[dict[str, Any]]:
             text = page.get_text("text").strip()
 
             if len(text) < 30:
-                # Inspect page metadata: invoke OCR only if the page contains raster images
-                # (e.g. scanned pages or image-heavy diagrams), avoiding unnecessary OCR
-                # on blank pages or pure vector line graphics.
                 images = page.get_images(full=True)
                 if images:
                     try:
                         tessdata_path = _get_tessdata_path()
                         ocr_kwargs: dict[str, Any] = {
                             "language": "eng",
-                            "dpi": 300,
+                            "dpi": 150,  # 150 DPI uses 75% less RAM than 300 DPI
                             "full": True,
                         }
                         if tessdata_path:
                             ocr_kwargs["tessdata"] = tessdata_path
 
                         text_page = page.get_textpage_ocr(**ocr_kwargs)
-                        text = page.get_text(
+                        ocr_text = page.get_text(
                             "text",
                             textpage=text_page,
                         ).strip()
+                        if ocr_text:
+                            text = ocr_text
                     except Exception as exc:
-                        raise RuntimeError(
-                            f"OCR failed on PDF page {page_number}. "
-                            "Check that Tesseract OCR is installed and "
-                            "English language data is available."
-                        ) from exc
+                        logger.warning(
+                            "OCR processing skipped on PDF page %d: %s. Using standard text fallback.",
+                            page_number,
+                            exc,
+                        )
 
             text = text.replace("\x00", "")
             text = re.sub(r"[ \t]+", " ", text)

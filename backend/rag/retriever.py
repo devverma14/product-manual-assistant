@@ -14,12 +14,11 @@ class FaissRetriever:
             "all-MiniLM-L6-v2"
         )
 
-        sample = np.asarray(
-            self.model.encode(["sample"]),
-            dtype="float32",
-        )
+        if hasattr(self.model, "get_sentence_embedding_dimension"):
+            self.dim = self.model.get_sentence_embedding_dimension()
+        else:
+            self.dim = 384
 
-        self.dim = sample.shape[1]
         self.index = faiss.IndexFlatIP(self.dim)
         self.docs: list[dict[str, Any]] = []
 
@@ -38,11 +37,20 @@ class FaissRetriever:
 
         texts = [doc["text"] for doc in valid_docs]
 
-        embeddings = self.model.encode(
-            texts,
-            convert_to_numpy=True,
-            show_progress_bar=False,
-        )
+        try:
+            import torch
+            with torch.no_grad():
+                embeddings = self.model.encode(
+                    texts,
+                    convert_to_numpy=True,
+                    show_progress_bar=False,
+                )
+        except Exception:
+            embeddings = self.model.encode(
+                texts,
+                convert_to_numpy=True,
+                show_progress_bar=False,
+            )
 
         embeddings = np.asarray(
             embeddings,
@@ -72,11 +80,20 @@ class FaissRetriever:
         if k <= 0 or not self.docs:
             return []
 
-        query_embedding = self.model.encode(
-            [query.strip()],
-            convert_to_numpy=True,
-            show_progress_bar=False,
-        )
+        try:
+            import torch
+            with torch.no_grad():
+                query_embedding = self.model.encode(
+                    [query.strip()],
+                    convert_to_numpy=True,
+                    show_progress_bar=False,
+                )
+        except Exception:
+            query_embedding = self.model.encode(
+                [query.strip()],
+                convert_to_numpy=True,
+                show_progress_bar=False,
+            )
 
         query_embedding = np.asarray(
             query_embedding,
