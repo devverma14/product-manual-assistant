@@ -299,6 +299,40 @@ class FastEmbedStartupTests(unittest.TestCase):
                     pass
 
 
+class IncrementalFAISSEmbeddingTests(unittest.TestCase):
+    def test_incremental_subbatch_indexing_and_normalization(self):
+        import numpy as np
+        from unittest.mock import MagicMock
+        from backend.rag.retriever import FaissRetriever
+
+        class DummyModel:
+            def embed(self, texts, batch_size=2):
+                for _ in texts:
+                    vec = np.ones(384, dtype="float32")
+                    yield vec
+
+        mock_model = DummyModel()
+        retriever = FaissRetriever(model=mock_model)
+
+        # 35 chunks to test multiple sub-batches of 16
+        docs = [{"page": (i // 5) + 1, "text": f"Chunk content sample {i+1}"} for i in range(35)]
+        retriever.add_documents(docs)
+
+        self.assertEqual(retriever.index.ntotal, 35)
+        self.assertEqual(retriever.dim, 384)
+        self.assertEqual(len(retriever.docs), 35)
+
+        # Reconstruct vector and verify L2 norm == 1.0
+        reconstructed = np.empty((1, 384), dtype="float32")
+        retriever.index.reconstruct(0, reconstructed[0])
+        norm = np.linalg.norm(reconstructed[0])
+        self.assertAlmostEqual(norm, 1.0, places=5)
+
+        # Verify search works with incremental index
+        results = retriever.retrieve("Chunk content sample 1", k=3)
+        self.assertGreater(len(results), 0)
+
+
 if __name__ == "__main__":
     unittest.main()
 

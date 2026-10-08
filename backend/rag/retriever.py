@@ -46,10 +46,10 @@ class FaissRetriever:
     def dimension(self, value: int) -> None:
         self.dim = value
 
-    def _encode_texts(self, texts: list[str]) -> np.ndarray:
+    def _encode_texts(self, texts: list[str], batch_size: int = 2) -> np.ndarray:
         if hasattr(self.model, "embed"):
             embeddings = np.empty((len(texts), self.dim), dtype="float32")
-            for idx, emb in enumerate(self.model.embed(texts, batch_size=8)):
+            for idx, emb in enumerate(self.model.embed(texts, batch_size=batch_size)):
                 embeddings[idx] = emb
             import gc
 
@@ -78,24 +78,29 @@ class FaissRetriever:
         if not valid_docs:
             raise ValueError("No valid document text provided.")
 
-        texts = [doc["text"] for doc in valid_docs]
-        embeddings = self._encode_texts(texts)
-        del texts
-
-        if embeddings.ndim != 2 or embeddings.shape[1] != self.dim:
-            raise ValueError("Embedding dimensions do not match.")
-
-        if not np.isfinite(embeddings).all():
-            raise ValueError("Embeddings contain invalid values.")
-
-        faiss.normalize_L2(embeddings)
-
         self.index = faiss.IndexFlatIP(self.dim)
-        self.index.add(embeddings)
-        del embeddings
         import gc
 
-        gc.collect()
+        sub_batch_size = 16
+        for i in range(0, len(valid_docs), sub_batch_size):
+            sub_docs = valid_docs[i : i + sub_batch_size]
+            sub_texts = [doc["text"] for doc in sub_docs]
+
+            sub_embeddings = self._encode_texts(sub_texts, batch_size=2)
+            del sub_texts
+
+            if sub_embeddings.ndim != 2 or sub_embeddings.shape[1] != self.dim:
+                raise ValueError("Embedding dimensions do not match.")
+
+            if not np.isfinite(sub_embeddings).all():
+                raise ValueError("Embeddings contain invalid values.")
+
+            faiss.normalize_L2(sub_embeddings)
+            self.index.add(sub_embeddings)
+
+            del sub_embeddings
+            gc.collect()
+
         self.docs = valid_docs
 
     def retrieve(
