@@ -144,6 +144,14 @@ def _get_frontend_origins() -> list[str]:
     return [origin.strip().rstrip("/") for origin in origins.split(",") if origin.strip()]
 
 
+def _get_rss_mb() -> float:
+    try:
+        import psutil
+        return round(psutil.Process().memory_info().rss / (1024 * 1024), 2)
+    except Exception:
+        return 0.0
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
@@ -151,11 +159,13 @@ async def lifespan(app: FastAPI):
     Pre-loads the FastEmbed model during application startup to avoid memory spikes
     and OOM failures during runtime PDF upload requests.
     """
+    logger.info("FastEmbed startup memory BEFORE: %.2f MB", _get_rss_mb())
     logger.info("Initializing FastEmbed embedding model during application startup...")
     try:
         model = _embedding_model()
         if model is None:
             raise RuntimeError("FastEmbed embedding model returned None during startup.")
+        logger.info("FastEmbed startup memory AFTER: %.2f MB", _get_rss_mb())
     except Exception as exc:
         logger.critical("Failed to initialize FastEmbed model during application startup: %s", exc, exc_info=True)
         raise RuntimeError(f"FastEmbed embedding model initialization failed during startup: {exc}") from exc
@@ -338,12 +348,19 @@ async def upload_manual(
     if not payload.startswith(b"%PDF"):
         raise HTTPException(status_code=400, detail="The uploaded file is not a valid PDF.")
 
+    logger.info("Upload memory AFTER payload read: %.2f MB", _get_rss_mb())
+
     try:
         chunks, page_count, full_text = await run_in_threadpool(_build_page_chunks, payload)
         if not full_text.strip() or not chunks:
             raise HTTPException(status_code=422, detail="No readable text was found in this PDF.")
 
+        logger.info("Upload memory AFTER PDF/OCR processing: %.2f MB", _get_rss_mb())
+        logger.info("Upload memory BEFORE embedding: %.2f MB", _get_rss_mb())
+
         retriever = await run_in_threadpool(_create_retriever, chunks)
+
+        logger.info("Upload memory AFTER embedding/FAISS: %.2f MB", _get_rss_mb())
 
         document_id = str(uuid.uuid4())
         words_count = len(full_text.split())
@@ -361,6 +378,10 @@ async def upload_manual(
 
         save_faiss_index_to_disk(document_id, retriever)
         _cache_retriever(document_id, retriever)
+
+        import gc
+        gc.collect()
+        logger.info("Upload memory AFTER cleanup: %.2f MB", _get_rss_mb())
 
         logger.info("Document indexed: %s (%d pages, %d chunks) for user %s", filename, page_count, len(chunks), user_id)
 

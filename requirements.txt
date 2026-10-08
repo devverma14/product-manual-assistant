@@ -10,3 +10,4 @@ tiktoken>=0.8,<1
 python-dotenv>=1.0,<2
 PyJWT[crypto]>=2.8,<3
 supabase>=2.10.0,<3
+psutil>=5.9.0
