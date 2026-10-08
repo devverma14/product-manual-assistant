@@ -48,9 +48,9 @@ class FaissRetriever:
 
     def _encode_texts(self, texts: list[str]) -> np.ndarray:
         if hasattr(self.model, "embed"):
-            raw_embeddings = list(self.model.embed(texts, batch_size=16))
-            embeddings = np.array(raw_embeddings, dtype="float32")
-            del raw_embeddings
+            embeddings = np.empty((len(texts), self.dim), dtype="float32")
+            for idx, emb in enumerate(self.model.embed(texts, batch_size=8)):
+                embeddings[idx] = emb
             import gc
 
             gc.collect()
@@ -64,7 +64,6 @@ class FaissRetriever:
             raise AttributeError("Embedding model has neither 'embed' nor 'encode' method.")
 
         return np.asarray(embeddings, dtype="float32")
-
 
     def add_documents(self, docs: list[dict[str, Any]]) -> None:
         if not docs:
@@ -81,6 +80,7 @@ class FaissRetriever:
 
         texts = [doc["text"] for doc in valid_docs]
         embeddings = self._encode_texts(texts)
+        del texts
 
         if embeddings.ndim != 2 or embeddings.shape[1] != self.dim:
             raise ValueError("Embedding dimensions do not match.")
@@ -92,6 +92,10 @@ class FaissRetriever:
 
         self.index = faiss.IndexFlatIP(self.dim)
         self.index.add(embeddings)
+        del embeddings
+        import gc
+
+        gc.collect()
         self.docs = valid_docs
 
     def retrieve(

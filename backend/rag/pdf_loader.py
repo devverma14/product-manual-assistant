@@ -76,12 +76,16 @@ def load_pdf_pages_bytes(file_bytes: bytes) -> list[dict[str, Any]]:
         if doc.is_encrypted:
             raise ValueError("Password-protected PDFs are not supported.")
 
+        if len(doc) > 50:
+            raise ValueError("PDF has too many pages. Maximum allowed is 50 pages.")
+
         for page_number, page in enumerate(doc, start=1):
             text = page.get_text("text").strip()
 
             if len(text) < 30:
                 images = page.get_images(full=True)
                 if images:
+                    text_page = None
                     try:
                         tessdata_path = _get_tessdata_path()
                         ocr_kwargs: dict[str, Any] = {
@@ -105,6 +109,10 @@ def load_pdf_pages_bytes(file_bytes: bytes) -> list[dict[str, Any]]:
                             page_number,
                             exc,
                         )
+                    finally:
+                        if text_page is not None:
+                            del text_page
+                        del images
 
             text = text.replace("\x00", "")
             text = re.sub(r"[ \t]+", " ", text)
@@ -118,6 +126,8 @@ def load_pdf_pages_bytes(file_bytes: bytes) -> list[dict[str, Any]]:
                 }
             )
 
+    import gc
+    gc.collect()
     return pages
 
 
@@ -133,3 +143,4 @@ def load_pdf_bytes(file_bytes: bytes) -> tuple[str, int]:
     )
 
     return full_text, len(pages)
+

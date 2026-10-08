@@ -868,6 +868,12 @@ type UploadStage = 'idle' | 'uploading' | 'processing' | 'indexing' | 'ready' | 
       return
     }
 
+    if (file.size > 10 * 1024 * 1024) {
+      setError('PDF file is too large. Maximum allowed size is 10 MB.')
+      if (inputRef.current) inputRef.current.value = ''
+      return
+    }
+
     const sourcePage = activePage
     setError('')
     setUploading(true)

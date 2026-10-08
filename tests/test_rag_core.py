@@ -169,8 +169,106 @@ class SourceFilteringTests(unittest.TestCase):
         self.assertGreater(len(filtered), 0)
 
 
+class PDFLimitTests(unittest.TestCase):
+    def test_pdf_exceeding_50_pages_rejected(self):
+        import fitz
+        from backend.rag.pdf_loader import load_pdf_pages_bytes
+
+        doc = fitz.open()
+        for i in range(51):
+            page = doc.new_page()
+            page.insert_text((50, 50), f"Page content {i+1}")
+        pdf_bytes = doc.tobytes()
+        doc.close()
+
+        with self.assertRaises(ValueError) as ctx:
+            load_pdf_pages_bytes(pdf_bytes)
+        self.assertEqual(str(ctx.exception), "PDF has too many pages. Maximum allowed is 50 pages.")
+
+    def test_pdf_under_50_pages_accepted(self):
+        import fitz
+        from backend.rag.pdf_loader import load_pdf_pages_bytes
+
+        doc = fitz.open()
+        for i in range(5):
+            page = doc.new_page()
+            page.insert_text((50, 50), f"Page content {i+1} with sufficient length for text extraction.")
+        pdf_bytes = doc.tobytes()
+        doc.close()
+
+        pages = load_pdf_pages_bytes(pdf_bytes)
+        self.assertEqual(len(pages), 5)
+
+    def test_api_upload_rejected_if_over_10mb(self):
+        from fastapi.testclient import TestClient
+        from backend.api.main import app
+
+        client = TestClient(app)
+        large_payload = b"%PDF-1.4 " + b"X" * (10 * 1024 * 1024 + 10)
+        files = {"file": ("large_manual.pdf", large_payload, "application/pdf")}
+        headers = {"X-Guest-Session-ID": "test_guest_limits"}
+
+        response = client.post("/api/manuals", files=files, headers=headers)
+        self.assertEqual(response.status_code, 413)
+        self.assertEqual(
+            response.json()["detail"],
+            "PDF file is too large. Maximum allowed size is 10 MB.",
+        )
+
+    def test_api_upload_rejected_if_over_50_pages(self):
+        import fitz
+        from fastapi.testclient import TestClient
+        from backend.api.main import app
+
+        doc = fitz.open()
+        for i in range(51):
+            page = doc.new_page()
+            page.insert_text((50, 50), f"Page content {i+1}")
+        pdf_bytes = doc.tobytes()
+        doc.close()
+
+        client = TestClient(app)
+        files = {"file": ("long_manual.pdf", pdf_bytes, "application/pdf")}
+        headers = {"X-Guest-Session-ID": "test_guest_limits"}
+
+        response = client.post("/api/manuals", files=files, headers=headers)
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.json()["detail"],
+            "PDF has too many pages. Maximum allowed is 50 pages.",
+        )
+
+    def test_api_upload_normal_pdf_accepted(self):
+        import fitz
+        from unittest.mock import MagicMock, patch
+        from fastapi.testclient import TestClient
+        from backend.api.main import app
+
+        doc = fitz.open()
+        page1 = doc.new_page()
+        page1.insert_text((50, 50), "Product Manual Section 1: Powering on the unit safely.")
+        page2 = doc.new_page()
+        page2.insert_text((50, 50), "Product Manual Section 2: Wi-Fi setup and device configuration steps.")
+        pdf_bytes = doc.tobytes()
+        doc.close()
+
+        mock_retriever = MagicMock()
+        with patch("backend.api.main._create_retriever", return_value=mock_retriever), \
+             patch("backend.api.main.save_faiss_index_to_disk"):
+            client = TestClient(app)
+            files = {"file": ("valid_manual.pdf", pdf_bytes, "application/pdf")}
+            headers = {"X-Guest-Session-ID": "test_guest_limits"}
+
+            response = client.post("/api/manuals", files=files, headers=headers)
+            self.assertEqual(response.status_code, 200)
+            data = response.json()
+            self.assertEqual(data["pages"], 2)
+            self.assertEqual(data["status"], "indexed")
+
+
 if __name__ == "__main__":
     unittest.main()
+
 
 
 

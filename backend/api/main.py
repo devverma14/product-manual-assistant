@@ -58,7 +58,7 @@ logger = logging.getLogger(__name__)
 APP_NAME = "Product Manual Assistant"
 APP_VERSION = "1.0.0"
 
-MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 DEFAULT_EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
 DEFAULT_TOP_K = 5
 MIN_RETRIEVAL_SCORE = 0.20
@@ -306,7 +306,10 @@ async def upload_manual(
     if not payload:
         raise HTTPException(status_code=400, detail="The uploaded PDF is empty.")
     if len(payload) > MAX_UPLOAD_BYTES:
-        raise HTTPException(status_code=413, detail="The maximum PDF upload size is 20 MB.")
+        raise HTTPException(
+            status_code=413,
+            detail="PDF file is too large. Maximum allowed size is 10 MB.",
+        )
     if not payload.startswith(b"%PDF"):
         raise HTTPException(status_code=400, detail="The uploaded file is not a valid PDF.")
 
@@ -346,6 +349,8 @@ async def upload_manual(
         }
     except HTTPException:
         raise
+    except ValueError as val_exc:
+        raise HTTPException(status_code=400, detail=str(val_exc)) from val_exc
     except Exception as exc:
         logger.exception("PDF processing or indexing failed.")
         raise HTTPException(status_code=422, detail=f"Failed to process PDF: {str(exc)}") from exc

@@ -21,7 +21,7 @@ type Props = {
   onFile: (file?: File) => void
 }
 
-const MAX_FILE_SIZE = 20 * 1024 * 1024
+const MAX_FILE_SIZE = 10 * 1024 * 1024
 
 export function UploadDropzone({
   uploading,
@@ -50,7 +50,7 @@ export function UploadDropzone({
     }
 
     if (file.size > MAX_FILE_SIZE) {
-      setValidationError('The PDF manual must be smaller than 20 MB.')
+      setValidationError('PDF file is too large. Maximum allowed size is 10 MB.')
       return
     }
 
@@ -180,7 +180,7 @@ export function UploadDropzone({
 
       <div className="file-note">
         <FileText size={14} />
-        <span>PDF format · Up to 20 MB</span>
+        <span>Maximum 10 MB • Maximum 50 pages</span>
         <span className="note-dot">·</span>
         <ShieldCheck size={14} />
         <span>Session-isolated indexing</span>
