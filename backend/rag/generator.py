@@ -1,12 +1,38 @@
 
-"""Gemini-grounded answer generation for retrieved product-manual passages."""
-
 import logging
 import os
 import re
+import time
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+
+def _is_transient_gemini_error(exc: Exception) -> bool:
+    """Determine if an exception represents a transient 503 or 429 Gemini API failure."""
+    code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
+    if code in (503, 429):
+        return True
+    if code in (400, 401, 403, 404):
+        return False
+
+    err_msg = f"{type(exc).__name__}: {exc}".lower()
+
+    if any(term in err_msg for term in ["invalid_argument", "unauthenticated", "permission_denied", "not_found", "bad request"]):
+        return False
+
+    transient_indicators = [
+        "503",
+        "429",
+        "service unavailable",
+        "resource_exhausted",
+        "resourceexhausted",
+        "too many requests",
+        "high demand",
+        "temporarily unavailable",
+        "rate limit",
+    ]
+    return any(indicator in err_msg for indicator in transient_indicators)
 
 
 def detect_response_language(question: str) -> dict[str, str]:
@@ -205,24 +231,53 @@ RETRIEVED MANUAL EXCERPTS:
 Write a concise, helpful answer grounded in the excerpts, adhering strictly to the response language instruction.
 """
 
-        response = client.models.generate_content(
-            model=model,
-            contents=prompt,
-        )
+        max_retries = 3
+        backoff_delays = [2.0, 4.0, 8.0]
+        response = None
 
-        answer = getattr(response, "text", None)
+        for attempt in range(max_retries + 1):
+            try:
+                response = client.models.generate_content(
+                    model=model,
+                    contents=prompt,
+                )
+                break
+            except Exception as e:
+                if _is_transient_gemini_error(e) and attempt < max_retries:
+                    delay = backoff_delays[attempt]
+                    logger.warning(
+                        "Transient Gemini API error (%s: %s). Retrying attempt %d/%d in %.1fs...",
+                        type(e).__name__,
+                        e,
+                        attempt + 1,
+                        max_retries,
+                        delay,
+                    )
+                    time.sleep(delay)
+                else:
+                    if _is_transient_gemini_error(e):
+                        logger.error(
+                            "Gemini API transient error persisted after %d retries (%s: %s).",
+                            max_retries,
+                            type(e).__name__,
+                            e,
+                        )
+                    else:
+                        logger.error("Gemini API non-retryable error: %s: %s", type(e).__name__, e)
+                    break
 
-        if answer and answer.strip():
-            return {
-                "answer": answer.strip(),
-                "mode": "llm",
-            }
+        if response is not None:
+            answer = getattr(response, "text", None)
 
-        logger.warning("Gemini error: The API returned an empty response.")
+            if answer and answer.strip():
+                return {
+                    "answer": answer.strip(),
+                    "mode": "llm",
+                }
+
+            logger.warning("Gemini error: The API returned an empty response.")
 
     except Exception as e:
-        # Log the actual error in the backend terminal.
-        # Do not log the API key.
         logger.error("Gemini API Error: %s: %s", type(e).__name__, e)
 
     return {

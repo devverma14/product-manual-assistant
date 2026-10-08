@@ -23,11 +23,110 @@ class ChunkerTests(unittest.TestCase):
 class GeneratorTests(unittest.TestCase):
     def test_missing_key_returns_cited_manual_evidence(self):
         contexts = [{"page": 7, "text": "Hold the power button for five seconds to restart the unit."}]
-        with patch.dict(os.environ, {"OPENAI_API_KEY": ""}):
+        with patch.dict(os.environ, {"OPENAI_API_KEY": "", "GEMINI_API_KEY": ""}):
             result = generate_answer("How do I restart it?", contexts)
         self.assertEqual(result["mode"], "extractive")
         self.assertIn("[Page 7]", result["answer"])
         self.assertIn("power button", result["answer"])
+
+
+class GeneratorRetryTests(unittest.TestCase):
+    def setUp(self):
+        self.contexts = [{"page": 1, "text": "Press button A to turn on device."}]
+
+    @patch("time.sleep")
+    @patch("google.genai.Client")
+    def test_gemini_successful_first_attempt(self, mock_client_cls, mock_sleep):
+        from unittest.mock import MagicMock
+        mock_response = MagicMock()
+        mock_response.text = "Press button A to turn on. [Page 1]"
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = mock_response
+        mock_client_cls.return_value = mock_client
+
+        with patch.dict(os.environ, {"GEMINI_API_KEY": "test_key"}):
+            result = generate_answer("How to turn on?", self.contexts)
+
+        self.assertEqual(result["mode"], "llm")
+        self.assertIn("button A", result["answer"])
+        self.assertEqual(mock_client.models.generate_content.call_count, 1)
+        mock_sleep.assert_not_called()
+
+    @patch("time.sleep")
+    @patch("google.genai.Client")
+    def test_gemini_503_followed_by_successful_retry(self, mock_client_cls, mock_sleep):
+        from unittest.mock import MagicMock
+        from google.genai.errors import APIError
+        err_503 = APIError(503, "The model is currently experiencing high demand. Please try again later.", None)
+        mock_response = MagicMock()
+        mock_response.text = "Press button A to turn on. [Page 1]"
+        mock_client = MagicMock()
+        mock_client.models.generate_content.side_effect = [err_503, mock_response]
+        mock_client_cls.return_value = mock_client
+
+        with patch.dict(os.environ, {"GEMINI_API_KEY": "test_key"}):
+            result = generate_answer("How to turn on?", self.contexts)
+
+        self.assertEqual(result["mode"], "llm")
+        self.assertIn("button A", result["answer"])
+        self.assertEqual(mock_client.models.generate_content.call_count, 2)
+        mock_sleep.assert_called_once_with(2.0)
+
+    @patch("time.sleep")
+    @patch("google.genai.Client")
+    def test_gemini_429_followed_by_successful_retry(self, mock_client_cls, mock_sleep):
+        from unittest.mock import MagicMock
+        from google.genai.errors import APIError
+        err_429 = APIError(429, "Too Many Requests: Rate limit exceeded.", None)
+        mock_response = MagicMock()
+        mock_response.text = "Press button A to turn on. [Page 1]"
+        mock_client = MagicMock()
+        mock_client.models.generate_content.side_effect = [err_429, mock_response]
+        mock_client_cls.return_value = mock_client
+
+        with patch.dict(os.environ, {"GEMINI_API_KEY": "test_key"}):
+            result = generate_answer("How to turn on?", self.contexts)
+
+        self.assertEqual(result["mode"], "llm")
+        self.assertIn("button A", result["answer"])
+        self.assertEqual(mock_client.models.generate_content.call_count, 2)
+        mock_sleep.assert_called_once_with(2.0)
+
+    @patch("time.sleep")
+    @patch("google.genai.Client")
+    def test_gemini_repeated_503_exhausts_retries(self, mock_client_cls, mock_sleep):
+        from unittest.mock import MagicMock
+        from google.genai.errors import APIError
+        err_503 = APIError(503, "High demand", None)
+        mock_client = MagicMock()
+        mock_client.models.generate_content.side_effect = [err_503, err_503, err_503, err_503]
+        mock_client_cls.return_value = mock_client
+
+        with patch.dict(os.environ, {"GEMINI_API_KEY": "test_key"}):
+            result = generate_answer("How to turn on?", self.contexts)
+
+        self.assertEqual(result["mode"], "extractive")
+        self.assertIn("[Page 1]", result["answer"])
+        self.assertEqual(mock_client.models.generate_content.call_count, 4)
+        self.assertEqual(mock_sleep.call_count, 3)
+
+    @patch("time.sleep")
+    @patch("google.genai.Client")
+    def test_gemini_non_retryable_400_error_no_retry(self, mock_client_cls, mock_sleep):
+        from unittest.mock import MagicMock
+        from google.genai.errors import APIError
+        err_400 = APIError(400, "Bad Request: Invalid argument", None)
+        mock_client = MagicMock()
+        mock_client.models.generate_content.side_effect = err_400
+        mock_client_cls.return_value = mock_client
+
+        with patch.dict(os.environ, {"GEMINI_API_KEY": "test_key"}):
+            result = generate_answer("How to turn on?", self.contexts)
+
+        self.assertEqual(result["mode"], "extractive")
+        self.assertIn("[Page 1]", result["answer"])
+        self.assertEqual(mock_client.models.generate_content.call_count, 1)
+        mock_sleep.assert_not_called()
 
 
 class CompressionTests(unittest.TestCase):

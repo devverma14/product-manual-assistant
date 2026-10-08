@@ -1321,7 +1321,7 @@ type UploadStage = 'idle' | 'uploading' | 'processing' | 'indexing' | 'ready' | 
               maxLength={1000}
               aria-label="Question about the manual"
             />
-            <span className="key-hint">↵</span>
+            <span className="key-hint hidden sm:inline-block">↵</span>
             <button
               className="send-button"
               type="submit"

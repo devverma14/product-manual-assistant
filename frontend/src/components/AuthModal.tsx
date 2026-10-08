@@ -299,7 +299,7 @@ export function AuthModal({ isOpen, onClose, onSuccess, onGuestClick, promptMess
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-md p-6 relative overflow-hidden cursor-default"
+        className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-md p-4 sm:p-6 relative max-h-[90vh] overflow-y-auto cursor-default"
         onClick={(e) => e.stopPropagation()}
       >
         <button
