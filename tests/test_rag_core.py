@@ -266,6 +266,39 @@ class PDFLimitTests(unittest.TestCase):
             self.assertEqual(data["status"], "indexed")
 
 
+class FastEmbedStartupTests(unittest.TestCase):
+    def test_embedding_model_cached_reuse(self):
+        import sys
+        from unittest.mock import MagicMock
+        from backend.api.main import _embedding_model
+
+        mock_fastembed = MagicMock()
+        mock_instance = MagicMock()
+        mock_fastembed.TextEmbedding.return_value = mock_instance
+
+        with patch.dict(sys.modules, {"fastembed": mock_fastembed}):
+            _embedding_model.cache_clear()
+            m1 = _embedding_model()
+            m2 = _embedding_model()
+            self.assertIs(m1, m2)
+            mock_fastembed.TextEmbedding.assert_called_once()
+
+    def test_lifespan_startup_initializes_model(self):
+        from fastapi.testclient import TestClient
+        from backend.api.main import app
+        with patch("backend.api.main._embedding_model") as mock_init:
+            with TestClient(app):
+                mock_init.assert_called_once()
+
+    def test_lifespan_startup_failure_raises(self):
+        from fastapi.testclient import TestClient
+        from backend.api.main import app
+        with patch("backend.api.main._embedding_model", side_effect=RuntimeError("Model download failed")):
+            with self.assertRaises(RuntimeError):
+                with TestClient(app):
+                    pass
+
+
 if __name__ == "__main__":
     unittest.main()
 

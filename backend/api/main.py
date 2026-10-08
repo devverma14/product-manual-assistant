@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import uuid
+from contextlib import asynccontextmanager
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -143,10 +144,32 @@ def _get_frontend_origins() -> list[str]:
     return [origin.strip().rstrip("/") for origin in origins.split(",") if origin.strip()]
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Application lifespan context manager.
+    Pre-loads the FastEmbed model during application startup to avoid memory spikes
+    and OOM failures during runtime PDF upload requests.
+    """
+    logger.info("Initializing FastEmbed embedding model during application startup...")
+    try:
+        model = _embedding_model()
+        if model is None:
+            raise RuntimeError("FastEmbed embedding model returned None during startup.")
+    except Exception as exc:
+        logger.critical("Failed to initialize FastEmbed model during application startup: %s", exc, exc_info=True)
+        raise RuntimeError(f"FastEmbed embedding model initialization failed during startup: {exc}") from exc
+
+    yield
+
+    logger.info("Shutting down Product Manual Assistant API...")
+
+
 app = FastAPI(
     title=APP_NAME,
     version=APP_VERSION,
     description="Multi-document Product Manual Assistant with auth, persistent history, vector search & Supabase storage.",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -176,8 +199,10 @@ def _embedding_model():
     model_name = os.getenv("EMBEDDING_MODEL", DEFAULT_EMBEDDING_MODEL).strip()
     if not model_name or model_name == "all-MiniLM-L6-v2":
         model_name = DEFAULT_EMBEDDING_MODEL
-    logger.info("Loading FastEmbed embedding model: %s (threads=1, enable_cpu_mem_arena=False)", model_name)
-    return TextEmbedding(model_name=model_name, threads=1, enable_cpu_mem_arena=False)
+    logger.info("Loading FastEmbed embedding model: %s (threads=1, enable_cpu_mem_arena=False)...", model_name)
+    model = TextEmbedding(model_name=model_name, threads=1, enable_cpu_mem_arena=False)
+    logger.info("FastEmbed embedding model ready.")
+    return model
 
 
 

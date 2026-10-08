@@ -31,6 +31,7 @@ import {
   LogIn,
   CheckCircle2,
   Info,
+  ChevronDown,
 } from 'lucide-react'
 
 import { AnswerCard } from './components/AnswerCard'
@@ -168,6 +169,12 @@ type UploadStage = 'idle' | 'uploading' | 'processing' | 'indexing' | 'ready' | 
   const [uploadingFileName, setUploadingFileName] = useState<string | null>(null)
   const [asking, setAsking] = useState(false)
   const [error, setError] = useState('')
+  const [uploadErrorDetail, setUploadErrorDetail] = useState<{
+    type: 'page_limit' | 'size_limit' | 'unexpected'
+    message: string
+    actual?: string
+    limit?: string
+  } | null>(null)
   const [dragging, setDragging] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [searchFilter, setSearchFilter] = useState('')
@@ -788,6 +795,7 @@ type UploadStage = 'idle' | 'uploading' | 'processing' | 'indexing' | 'ready' | 
   const dismissUploadStatus = () => {
     setUploadStage('idle')
     setUploadingFileName(null)
+    setUploadErrorDetail(null)
   }
 
   const openReadyChat = async () => {
@@ -869,7 +877,16 @@ type UploadStage = 'idle' | 'uploading' | 'processing' | 'indexing' | 'ready' | 
     }
 
     if (file.size > 10 * 1024 * 1024) {
-      setError('PDF file is too large. Maximum allowed size is 10 MB.')
+      const fileMB = (file.size / (1024 * 1024)).toFixed(1)
+      setUploadingFileName(file.name)
+      setUploadStage('error')
+      setUploading(false)
+      setUploadErrorDetail({
+        type: 'size_limit',
+        message: `PDF file is too large. Maximum allowed size is 10 MB.`,
+        actual: `${fileMB} MB`,
+        limit: '10 MB',
+      })
       if (inputRef.current) inputRef.current.value = ''
       return
     }
@@ -962,10 +979,36 @@ type UploadStage = 'idle' | 'uploading' | 'processing' | 'indexing' | 'ready' | 
             return
           }
 
-          setError(result.detail || 'Could not process this PDF.')
           setUploading(false)
           setUploadStage('error')
           if (inputRef.current) inputRef.current.value = ''
+
+          const detail: string = result.detail || ''
+
+          if (request.status === 413 || detail.toLowerCase().includes('too large') || detail.toLowerCase().includes('maximum allowed size')) {
+            const fileMB = file ? (file.size / (1024 * 1024)).toFixed(1) : null
+            setUploadErrorDetail({
+              type: 'size_limit',
+              message: detail || 'PDF file is too large. Maximum allowed size is 10 MB.',
+              actual: fileMB ? `${fileMB} MB` : undefined,
+              limit: '10 MB',
+            })
+          } else if (detail.toLowerCase().includes('too many pages') || detail.toLowerCase().includes('maximum allowed is 50 pages')) {
+            // Try to extract actual page count from backend message if present (e.g. "... 61 pages ...")
+            const pageMatch = detail.match(/(\d+)\s+pages?\s+(?:in|found|detected|total)/i)
+            const actualPageCount = pageMatch ? pageMatch[1] : null
+            setUploadErrorDetail({
+              type: 'page_limit',
+              message: detail || 'PDF has too many pages. Maximum allowed is 50 pages.',
+              actual: actualPageCount ? `${actualPageCount} pages` : undefined,
+              limit: '50 pages',
+            })
+          } else {
+            setUploadErrorDetail({
+              type: 'unexpected',
+              message: detail || 'Document processing failed. Please try again.',
+            })
+          }
         } else {
           handleUploadSuccess(result, sourcePage)
         }
@@ -1373,6 +1416,7 @@ type UploadStage = 'idle' | 'uploading' | 'processing' | 'indexing' | 'ready' | 
               progress={uploadProgress}
               stage={uploadStage}
               fileName={uploadingFileName}
+              errorDetail={uploadErrorDetail}
               dragging={dragging}
               onDragChange={setDragging}
               onChoose={openUpload}
@@ -2168,7 +2212,11 @@ type UploadStage = 'idle' | 'uploading' | 'processing' | 'indexing' | 'ready' | 
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
                           <strong className="text-xs font-extrabold truncate block text-slate-900">
-                            {uploadingFileName || 'PDF Manual'}
+                            {uploadStage === 'error' && uploadErrorDetail?.type === 'size_limit'
+                              ? 'PDF is too large'
+                              : uploadStage === 'error' && uploadErrorDetail?.type === 'page_limit'
+                              ? 'PDF has too many pages'
+                              : uploadingFileName || 'PDF Manual'}
                           </strong>
                           <span className={`text-[10px] font-extrabold uppercase tracking-wide px-2 py-0.5 rounded-full ${
                             uploadStage === 'ready'
@@ -2181,16 +2229,51 @@ type UploadStage = 'idle' | 'uploading' | 'processing' | 'indexing' | 'ready' | 
                             {uploadStage === 'processing' && 'Processing document...'}
                             {uploadStage === 'indexing' && 'Indexing document...'}
                             {uploadStage === 'ready' && 'Document ready'}
-                            {uploadStage === 'error' && 'Failed'}
+                            {uploadStage === 'error' && (uploadErrorDetail?.type === 'page_limit' || uploadErrorDetail?.type === 'size_limit' ? 'Upload limit exceeded' : 'Failed')}
                           </span>
                         </div>
-                        <p className="text-[11px] text-slate-600 mt-0.5">
-                          {uploadStage === 'uploading' && 'Transferring PDF file to server...'}
-                          {uploadStage === 'processing' && 'Extracting text and structure from PDF pages...'}
-                          {uploadStage === 'indexing' && 'Generating vector embeddings and building FAISS index...'}
-                          {uploadStage === 'ready' && (activePage === 'chat' ? 'Document ready and selected for chat.' : 'Document indexed and ready. Click Open Chat to start asking questions.')}
-                          {uploadStage === 'error' && 'Document processing failed. Please try again or check the file.'}
-                        </p>
+                        {uploadStage === 'error' && uploadErrorDetail ? (
+                          <div className="mt-1.5 space-y-1">
+                            <p className="text-[11.5px] font-semibold text-rose-900">
+                              {uploadErrorDetail.type === 'page_limit'
+                                ? uploadErrorDetail.actual && uploadErrorDetail.actual !== '50 pages'
+                                  ? `This document has ${uploadErrorDetail.actual}, while the current version supports up to 50 pages.`
+                                  : 'This document exceeds the 50-page limit supported in the current version.'
+                                : uploadErrorDetail.type === 'size_limit'
+                                ? uploadErrorDetail.actual
+                                  ? `This PDF is ${uploadErrorDetail.actual}, while the current version supports files up to 10 MB.`
+                                  : 'This PDF exceeds the maximum file size supported in the current version (10 MB).'
+                                : uploadErrorDetail.message || 'Document processing failed. Please try again.'}
+                            </p>
+                            {(uploadErrorDetail.type === 'page_limit' || uploadErrorDetail.type === 'size_limit') && (
+                              <>
+                                <p className="text-[11px] font-bold text-rose-800">
+                                  Maximum supported: {uploadErrorDetail.type === 'size_limit' ? '10 MB' : '50 pages'}
+                                </p>
+                                <details className="mt-1.5 group">
+                                  <summary className="cursor-pointer text-[11px] font-semibold text-rose-700 hover:text-rose-900 inline-flex items-center gap-1 select-none">
+                                    <span>Why is there a limit?</span>
+                                    <ChevronDown size={13} className="transition-transform group-open:rotate-180" />
+                                  </summary>
+                                  <div className="mt-1.5 p-2.5 bg-slate-50/90 rounded-lg border border-slate-200/80 text-[10.5px] text-slate-600 space-y-1">
+                                    <p className="font-semibold text-slate-700">Why this limit?</p>
+                                    <p>The deployment environment has limited memory resources. These limits help maintain reliable OCR, embedding, and indexing for all users.</p>
+                                    <p className="font-semibold text-slate-700 pt-0.5">Future upgrade:</p>
+                                    <p>Support for larger documents can be increased with higher server resources and further processing optimisations.</p>
+                                  </div>
+                                </details>
+                              </>
+                            )}
+                          </div>
+                        ) : (
+                          <p className="text-[11px] text-slate-600 mt-0.5">
+                            {uploadStage === 'uploading' && 'Transferring PDF file to server...'}
+                            {uploadStage === 'processing' && 'Extracting text and structure from PDF pages...'}
+                            {uploadStage === 'indexing' && 'Generating vector embeddings and building FAISS index...'}
+                            {uploadStage === 'ready' && (activePage === 'chat' ? 'Document ready and selected for chat.' : 'Document indexed and ready. Click Open Chat to start asking questions.')}
+                            {uploadStage === 'error' && 'Document processing failed. Please try again.'}
+                          </p>
+                        )}
                       </div>
                     </div>
 

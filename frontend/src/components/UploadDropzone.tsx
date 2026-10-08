@@ -8,6 +8,7 @@ import {
   AlertCircle,
   Sparkles,
   CheckCircle2,
+  ChevronDown,
 } from 'lucide-react'
 
 type Props = {
@@ -15,6 +16,12 @@ type Props = {
   progress: number
   stage?: 'idle' | 'uploading' | 'processing' | 'indexing' | 'ready' | 'error'
   fileName?: string | null
+  errorDetail?: {
+    type?: 'size_limit' | 'page_limit' | 'unexpected'
+    message?: string
+    actual?: string
+    limit?: string
+  } | null
   dragging: boolean
   onDragChange: (dragging: boolean) => void
   onChoose: () => void
@@ -28,6 +35,7 @@ export function UploadDropzone({
   progress,
   stage = 'idle',
   fileName,
+  errorDetail,
   dragging,
   onDragChange,
   onChoose,
@@ -175,6 +183,53 @@ export function UploadDropzone({
         <div className="upload-error" role="alert" aria-live="assertive">
           <AlertCircle size={15} />
           <span>{validationError}</span>
+        </div>
+      )}
+
+      {stage === 'error' && errorDetail && (
+        <div className="w-full text-left bg-rose-50/90 border border-rose-200 rounded-xl p-3.5 my-2" role="alert">
+          <div className="flex items-start gap-2.5">
+            <AlertCircle className="text-rose-600 shrink-0 mt-0.5" size={18} />
+            <div className="min-w-0 flex-1">
+              <h4 className="text-xs font-extrabold text-rose-950">
+                {errorDetail.type === 'size_limit'
+                  ? 'PDF is too large'
+                  : errorDetail.type === 'page_limit'
+                  ? 'PDF has too many pages'
+                  : 'Upload failed'}
+              </h4>
+              <p className="text-[11.5px] font-semibold text-rose-900 mt-0.5">
+                {errorDetail.type === 'size_limit'
+                  ? errorDetail.actual
+                    ? `This PDF is ${errorDetail.actual}, while the current version supports files up to 10 MB.`
+                    : 'This PDF exceeds the maximum file size supported in the current version (10 MB).'
+                  : errorDetail.type === 'page_limit'
+                  ? errorDetail.actual && errorDetail.actual !== '50 pages'
+                    ? `This document has ${errorDetail.actual}, while the current version supports up to 50 pages.`
+                    : 'This document exceeds the 50-page limit supported in the current version.'
+                  : errorDetail.message || 'Document processing failed. Please try again.'}
+              </p>
+              {(errorDetail.type === 'size_limit' || errorDetail.type === 'page_limit') && (
+                <>
+                  <p className="text-[11px] font-bold text-rose-800 mt-1">
+                    Maximum supported: {errorDetail.type === 'size_limit' ? '10 MB' : '50 pages'}
+                  </p>
+                  <details className="mt-2 group" onClick={(e) => e.stopPropagation()}>
+                    <summary className="cursor-pointer text-[11px] font-semibold text-rose-700 hover:text-rose-900 inline-flex items-center gap-1 select-none">
+                      <span>Why is there a limit?</span>
+                      <ChevronDown size={13} className="transition-transform group-open:rotate-180" />
+                    </summary>
+                    <div className="mt-1.5 p-2.5 bg-slate-50/90 rounded-lg border border-slate-200/80 text-[10.5px] text-slate-600 space-y-1">
+                      <p className="font-semibold text-slate-700">Why this limit?</p>
+                      <p>The deployment environment has limited memory resources. These limits help maintain reliable OCR, embedding, and indexing for all users.</p>
+                      <p className="font-semibold text-slate-700 pt-0.5">Future upgrade:</p>
+                      <p>Support for larger documents can be increased with higher server resources and further processing optimisations.</p>
+                    </div>
+                  </details>
+                </>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
