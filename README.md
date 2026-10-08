@@ -293,4 +293,4 @@ npm run build
 
 **Dev Verma**
 
-[Connect with me on LinkedIn](https://www.linkedin.com/in/devverma14/)
+🔗 [Connect on LinkedIn](https://www.linkedin.com/in/dev-verma-b9b020263)
