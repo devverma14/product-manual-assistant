@@ -22,7 +22,7 @@ import {
 import type { Manual } from '../types'
 import { getSingleInitial } from '../lib/supabase'
 
-type Page =
+export type Page =
   | 'dashboard'
   | 'documents'
   | 'chat'
@@ -30,6 +30,8 @@ type Page =
   | 'collections'
   | 'analytics'
   | 'settings'
+  | 'privacy'
+  | 'terms'
 
 export type UserProfile = {
   id?: string

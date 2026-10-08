@@ -37,12 +37,14 @@ import {
 import { AnswerCard } from './components/AnswerCard'
 import { AuthModal } from './components/AuthModal'
 import { FeatureLockedCard } from './components/FeatureLockedCard'
+import { PrivacyPolicyPage } from './components/PrivacyPolicy'
+import { TermsOfServicePage } from './components/TermsOfService'
 import { Sidebar, BrandHeader, UserProfile } from './components/Sidebar'
 import { UploadDropzone } from './components/UploadDropzone'
 import { isSupabaseConfigured, supabase, isUserVerified, getSingleInitial } from './lib/supabase'
 import type { Manual, Reply, Turn } from './types'
 
-type Page =
+export type Page =
   | 'dashboard'
   | 'documents'
   | 'chat'
@@ -50,6 +52,8 @@ type Page =
   | 'collections'
   | 'analytics'
   | 'settings'
+  | 'privacy'
+  | 'terms'
 
 type Conversation = {
   id: string
@@ -131,15 +135,33 @@ async function readError(response: Response) {
   }
 }
 
+const getInitialPage = (): Page => {
+  const path = window.location.pathname.toLowerCase()
+  if (path === '/privacy' || path === '/privacy/') return 'privacy'
+  if (path === '/terms' || path === '/terms/') return 'terms'
+  return 'dashboard'
+}
+
 type AuthStatus = 'initializing' | 'unauthenticated' | 'authenticated' | 'guest'
 
 export default function App() {
-  const [activePage, setActivePage] = useState<Page>('dashboard')
+  const [activePage, setActivePage] = useState<Page>(getInitialPage)
   const [authStatus, setAuthStatus] = useState<AuthStatus>('initializing')
   const [session, setSession] = useState<Session | null>(null)
   const [user, setUser] = useState<UserProfile | null>(null)
   const [authModalOpen, setAuthModalOpen] = useState(false)
   const [authModalPrompt, setAuthModalPrompt] = useState('')
+
+  useEffect(() => {
+    const handlePopState = () => {
+      const path = window.location.pathname.toLowerCase()
+      if (path === '/privacy' || path === '/privacy/') setActivePage('privacy')
+      else if (path === '/terms' || path === '/terms/') setActivePage('terms')
+      else setActivePage('dashboard')
+    }
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [])
 
   const openAuthModal = (prompt = '') => {
     setAuthModalPrompt(prompt)
@@ -790,6 +812,15 @@ type UploadStage = 'idle' | 'uploading' | 'processing' | 'indexing' | 'ready' | 
     setActivePage(page)
     setError('')
     setMobileNavOpen(false)
+    if (page === 'privacy') {
+      if (window.location.pathname !== '/privacy') window.history.pushState({}, '', '/privacy')
+    } else if (page === 'terms') {
+      if (window.location.pathname !== '/terms') window.history.pushState({}, '', '/terms')
+    } else {
+      if (window.location.pathname === '/privacy' || window.location.pathname === '/terms') {
+        window.history.pushState({}, '', '/')
+      }
+    }
   }
 
   const dismissUploadStatus = () => {
@@ -1920,6 +1951,12 @@ type UploadStage = 'idle' | 'uploading' | 'processing' | 'indexing' | 'ready' | 
           </div>
         )
 
+      case 'privacy':
+        return <PrivacyPolicyPage onNavigate={navigate} />
+
+      case 'terms':
+        return <TermsOfServicePage onNavigate={navigate} />
+
       default:
         return null
     }
@@ -2016,6 +2053,8 @@ type UploadStage = 'idle' | 'uploading' | 'processing' | 'indexing' | 'ready' | 
     collections: 'Collections',
     analytics: 'Analytics',
     settings: 'Settings',
+    privacy: 'Privacy Policy',
+    terms: 'Terms of Service',
   }
 
   if (authStatus === 'initializing') {
@@ -2143,6 +2182,7 @@ type UploadStage = 'idle' | 'uploading' | 'processing' | 'indexing' | 'ready' | 
         }}
         onGuestClick={startGuestSession}
         promptMessage={authModalPrompt}
+        onNavigate={navigate}
       />
 
       <main className="layout">
@@ -2163,7 +2203,9 @@ type UploadStage = 'idle' | 'uploading' | 'processing' | 'indexing' | 'ready' | 
         />
 
         <section className="main-panel">
-          {authStatus === 'unauthenticated' ? (
+          {activePage === 'privacy' || activePage === 'terms' ? (
+            renderPage()
+          ) : authStatus === 'unauthenticated' ? (
             activePage === 'dashboard' ? (
               renderUnauthenticatedLanding()
             ) : (
@@ -2314,10 +2356,28 @@ type UploadStage = 'idle' | 'uploading' | 'processing' | 'indexing' | 'ready' | 
             </div>
           )}
 
-          <footer>
-            <span>PRODUCT MANUAL ASSISTANT</span>
-            <i />
-            Built to make product knowledge easier to find
+          <footer className="flex flex-col sm:flex-row items-center justify-between gap-2 border-t border-slate-200 pt-4 mt-10 text-xs text-slate-500">
+            <div className="flex items-center gap-2">
+              <span className="font-extrabold text-slate-900 tracking-wider">PRODUCT MANUAL ASSISTANT</span>
+              <i />
+              Built to make product knowledge easier to find
+            </div>
+            <div className="flex items-center gap-4 text-xs font-semibold">
+              <button
+                type="button"
+                onClick={() => navigate('privacy')}
+                className="hover:text-indigo-600 transition-colors cursor-pointer"
+              >
+                Privacy Policy
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate('terms')}
+                className="hover:text-indigo-600 transition-colors cursor-pointer"
+              >
+                Terms of Service
+              </button>
+            </div>
           </footer>
         </section>
       </main>

@@ -10,9 +10,10 @@ type Props = {
   onSuccess: () => void
   onGuestClick?: () => void
   promptMessage?: string
+  onNavigate?: (page: 'privacy' | 'terms') => void
 }
 
-export function AuthModal({ isOpen, onClose, onSuccess, onGuestClick, promptMessage }: Props) {
+export function AuthModal({ isOpen, onClose, onSuccess, onGuestClick, promptMessage, onNavigate }: Props) {
   const [isSignUp, setIsSignUp] = useState(false)
   const [showOtpScreen, setShowOtpScreen] = useState(false)
   const [fullName, setFullName] = useState('')
@@ -565,6 +566,30 @@ export function AuthModal({ isOpen, onClose, onSuccess, onGuestClick, promptMess
             <div className="mt-3 flex items-center gap-1.5 justify-center text-[11px] text-slate-400">
               <ShieldCheck size={13} className="text-emerald-500" />
               <span>Session-isolated data · Encrypted authentication</span>
+            </div>
+
+            <div className="mt-3.5 pt-2.5 border-t border-slate-100 flex items-center justify-center gap-3 text-[11px] text-slate-400">
+              <button
+                type="button"
+                onClick={() => {
+                  onClose()
+                  if (onNavigate) onNavigate('privacy')
+                }}
+                className="hover:text-indigo-600 font-semibold underline transition-colors"
+              >
+                Privacy Policy
+              </button>
+              <span>·</span>
+              <button
+                type="button"
+                onClick={() => {
+                  onClose()
+                  if (onNavigate) onNavigate('terms')
+                }}
+                className="hover:text-indigo-600 font-semibold underline transition-colors"
+              >
+                Terms of Service
+              </button>
             </div>
           </>
         )}
